@@ -1,6 +1,6 @@
 # Contributing to SDIA
 
-Thank you for wanting to contribute to Safe Digital Identity Audit! 🎉
+Thank you for wanting to contribute to Self Digital Identity Audit! 🎉
 
 This project exists to protect the digital identity of minors through education. Every contribution, no matter how small, has real impact.
 

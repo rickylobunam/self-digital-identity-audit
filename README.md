@@ -1,4 +1,4 @@
-# 🔍 Safe Digital Identity Audit (SDIA)
+# 🔍 Self Digital Identity Audit (SDIA)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Hackathon](https://img.shields.io/badge/Hackathon-404%3A%20Threat%20Not%20Found%202026-orange)](https://github.com/[org]/self-digital-identity-audit)

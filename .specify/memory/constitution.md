@@ -8,7 +8,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Official name** | Safe Digital Identity Audit (SDIA) |
+| **Official name** | Self Digital Identity Audit (SDIA) |
 | **Repository** | `github.com/[org]/self-digital-identity-audit` |
 | **License** | MIT |
 | **Type** | Open Source · Child digital safety education tool |
