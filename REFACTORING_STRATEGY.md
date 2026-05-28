@@ -157,20 +157,42 @@ chore(infra): remove GitHub Actions report-generator workflow
 |----|------|------|--------|-------------|
 | 1 | ARCHITECTURE.md | fix(docs) | ✅ Done | ADR-004 final decision |
 | 2 | README.md | fix(docs) | ✅ Done | Diagram alignment |
-| 3 | REQUIREMENTS.md | fix(docs) | ⏳ Next | FR-06 update |
-| 4 | DEVELOPER_GUIDE.md | fix(docs) | ⏳ Planned | Cron setup guide |
-| 5 | TESTING_STRATEGY.md | chore(docs) | ⏳ Planned | Remove GA refs |
-| 6 | constitution.md | docs | ⏳ Planned | Finalize tech stack |
-| 7 | .github/workflows/ | chore(infra) | ⏳ Planned | Remove cron workflow |
+| 3 | REQUIREMENTS.md | fix(docs) | ✅ Done | FR-06 update |
+| 4 | DEVELOPER_GUIDE.md | fix(docs) | ✅ Done | Cron setup guide |
+| 5 | TESTING_STRATEGY.md | chore(docs) | ✅ Done | Remove GA refs |
+| 6 | constitution.md | docs | ✅ Done | Finalize tech stack |
+| 7 | .github/workflows/ | chore(infra) | ✅ Done | Remove cron workflow |
 
 ---
 
 ## 🚀 Next Steps
 
-1. **Now**: ARCHITECTURE.md ✅ + README.md ✅
-2. **Next**: Run `git log --oneline | head -5` to confirm commits
-3. **Then**: Open REQUIREMENTS.md → Commit 3
-4. Continue with Commits 4–7 following the same pattern
+1. **✅ COMPLETED**: All 7 commits have been successfully implemented
+2. **✅ VERIFIED**: All commits are registered in git history
+3. **→ NEXT**: Code implementation
+   - Backend: Implement `src/services/cronService.ts` with node-cron scheduler
+   - Backend: Implement `src/services/orchestration.ts` with Bicep provisioning logic
+   - Backend: Add `POST /api/internal/trigger-report-cycle` endpoint for manual testing
+   - Tests: Implement unit + integration tests for cron scheduler (as per TESTING_STRATEGY.md)
+4. **→ FOLLOW-UP**: Update docker-compose.yml with environment variables for CRON_ENABLED, CRON_TIMEZONE, CRON_SCHEDULE
+5. **→ VALIDATION**: Run full test suite and verify cron behavior in local environment
+
+---
+
+## 📝 Implementation Checklist
+
+- [ ] Backend: cronService.ts implementation (node-cron initialization)
+- [ ] Backend: orchestration.ts (Bicep provisioning, job management)
+- [ ] Backend: Internal trigger endpoint POST /api/internal/trigger-report-cycle
+- [ ] Backend: Unit tests for cronService (Jest)
+- [ ] Backend: Integration tests for orchestrator provisioning
+- [ ] Docker Compose: Add CRON_* environment variables
+- [ ] Local testing: Verify manual trigger works
+- [ ] Local testing: Verify scheduler behavior (use CRON_SCHEDULE=*/5 * * * * for 5-min intervals)
+- [ ] Documentation: Update README with local scheduler testing instructions
+- [ ] Code review: Review all changes with team
+- [ ] Staging deployment: Test in Azure dev environment
+- [ ] Production deployment: Monitor first 24h after go-live
 
 ---
 
