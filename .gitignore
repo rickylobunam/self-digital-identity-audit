@@ -1,0 +1,61 @@
+# ── Environment & Secrets ─────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── Node.js ───────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# ── Python ────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.egg-info/
+
+# ── Frontend Build ────────────────────────────────────────────────
+frontend/dist/
+
+# ── Test Artifacts ────────────────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+*.snap
+
+# ── Azure / Bicep ─────────────────────────────────────────────────
+*.bicep.lock.json
+.azure/
+
+# ── Docker ────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── IDEs ──────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── OS ────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Logs ──────────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── Locally generated test PDFs ───────────────────────────────────
+orchestrator/tests/output/*.pdf
+orchestrator/tmp/
+
+# ── Cosmos DB Emulator certificate ────────────────────────────────
+emulatorcert.pfx
