@@ -7,56 +7,140 @@
 
 ## 1. General Architecture Diagram
 
+### 1.1 System Overview
+
 ```mermaid
 flowchart TD
-    subgraph "Public Layer (Free)"
-        GH[GitHub Pages\nVite + React + TypeScript\nStatic SPA]
+    USER([👤 Minor — User])
+
+    subgraph BLOCK1["Block 1 · User Interaction & Always-On Control Plane"]
+        direction TB
+
+        subgraph FRONTEND["Public Layer — GitHub Pages (free)"]
+            GH["Vite + React + TypeScript\nStatic SPA\ngithub.io/[org]/sdia"]
+        end
+
+        subgraph APIPLANE["API Layer — Azure Container Apps (scale-to-zero)"]
+            API["Node.js Fastify API\nHTTP · Auth · Rate Limiting\nControl Plane Orchestrator"]
+            CRON(["⏰ node-cron\nInternal Scheduler\n10:00 AM UTC-6"])
+            KV["Azure Key Vault\nManaged Identity\nAll secrets at rest"]
+            API -.- KV
+        end
+
+        subgraph DATAPLANE["Data Layer — Always Ephemeral"]
+            DB[("Cosmos DB Serverless\nCore SQL API\nPartition: /requestId\nTTL: 172800 s")]
+            ACS["Azure Comm. Services\nTransactional Email\nOTP + Report delivery"]
+        end
     end
 
-    subgraph "Always-On Backend (Scale-to-Zero)"
-        API[Node.js Fastify API\nAzure Container Apps\nConsumption Plan]
-        KV[Azure Key Vault\nManaged Identity]
-        API --> KV
+    subgraph BLOCK2["Block 2 · Report Generation — Ephemeral IaaS (On-Demand Only)"]
+        direction TB
+
+        subgraph PROVISION["Provisioning Layer"]
+            BICEP["Bicep IaC\nAzure Dynamic Provisioner\nDeploy → Run → Teardown"]
+        end
+
+        subgraph EXECUTION["Execution Layer — Python Container Apps Job"]
+            ORCH["Python FastAPI\nReport Orchestrator\nParallel job processing"]
+            OSINT["OSINT Module\nMaigret · httpx\nPublic sources only"]
+            LLM["Azure OpenAI\ngpt-4o-mini · AI Foundry\nAtomic inference per job"]
+            PDF["Report Builder\nJinja2 → WeasyPrint\npikepdf AES-256"]
+            BLOB[("Azure Blob Storage\nTemp PDFs\nSAS URL TTL 48 h")]
+        end
+
+        subgraph RECONCILE["Reconciliation Layer"]
+            RECON["Workflow Reconciliation\nState validation\nBicep teardown trigger"]
+        end
     end
 
-    subgraph "Data (Ephemeral TTL 48h)"
-        DB[(Azure Cosmos DB\nServerless · NoSQL\nPartition: /requestId\nTTL: 172800s)]
-    end
+    %% ── Flow A · Registration & Email Validation
+    USER -->|"① POST /api/jobs\n{email, nickname}"| GH
+    GH -->|"POST /api/jobs"| API
+    API -->|"Create AuditJob\nstatus: PENDING_EMAIL_VALIDATION"| DB
+    API -->|"Send OTP link\nTTL 1h · single-use"| ACS
+    ACS -->|"Email: link to GitHub Pages\n?jobId=xxx&token=yyy"| USER
+    USER -->|"② Click link → GitHub Pages\nreads query params"| GH
+    GH -->|"GET /validate-email?token"| API
+    API -->|"status: EMAIL_VALIDATED\nIssue JWT sessionToken 25h"| DB
 
-    subgraph "Communications"
-        ACS[Azure Communication\nServices — Email]
-    end
+    %% ── Flow B · Platform Ownership Validation
+    USER -->|"③ Select platforms\n④ Place token in public bio\n(loop per platform)"| GH
+    GH -->|"POST /platforms/:p/verify\nRepeat until all validated"| API
+    API -->|"COLLECTING_PLATFORMS\n→ READY_TO_REPORT"| DB
 
-    subgraph "Orchestrator (Ephemeral, Daily Batch)"
-        CRON[GitHub Actions\nCron 10:00 AM UTC-6]
-        ORCH[Python FastAPI\nAzure Container Apps Job\nBicep on-demand]
-        OSINT[Maigret + httpx\nOSINT Module]
-        LLM[Azure OpenAI\ngpt-4o-mini\nAzure AI Foundry]
-        PDF[WeasyPrint + pikepdf\nPDF Generator]
-        BLOB[Azure Blob Storage\nTemp PDFs TTL 48h\nSAS URLs]
-    end
+    %% ── Flow C · Cron Detection & Provisioning
+    CRON -->|"⑤ SELECT jobs WHERE\nstatus = READY_TO_REPORT"| DB
+    CRON -->|"⑥ N > 0: az deployment\ngroup create"| BICEP
+    BICEP -->|"Deploy Container Apps Job\nwith job IDs list"| ORCH
 
-    GH -->|POST /api/jobs| API
-    API -->|CRUD jobs| DB
-    API -->|Send OTP email| ACS
-    ACS -->|Validation email| USER[User — Minor]
-    USER -->|Click → mini-app| GH
-    GH -->|validate-email, verify platforms| API
+    %% ── Flow D · Report Generation
+    ORCH -->|"OSINT: public profiles\n(rate-limited per platform)"| OSINT
+    ORCH -->|"build_prompt(findings)\nAtomic inference"| LLM
+    LLM -->|"Structured JSON\n(score, risks, social_sim)"| ORCH
+    ORCH -->|"Jinja2 render\nWeasyPrint PDF"| PDF
+    PDF -->|"pikepdf AES-256\npassword = base62(SHA256(email))[:12]"| BLOB
+    BLOB -->|"SAS URL TTL 48h"| ORCH
 
-    CRON -->|Query READY_TO_REPORT| DB
-    CRON -->|If N>0: Bicep deploy| ORCH
-    ORCH -->|OSINT per platform| OSINT
-    ORCH -->|Structured analysis| LLM
-    LLM --> ORCH
-    ORCH -->|HTML→PDF+password| PDF
-    PDF -->|Upload| BLOB
-    BLOB -->|SAS URL| ORCH
-    ORCH -->|Email with PDF+password| ACS
-    ACS -->|Report delivered| USER
-    ORCH -->|status: REPORT_READY| DB
+    %% ── Flow E · Delivery & Reconciliation
+    ORCH -->|"⑦ PDF + password\n+ download link"| ACS
+    ACS -->|"Report delivered\nto user inbox"| USER
+    ORCH -->|"POST /internal/jobs/reconcile\n{jobIds, status: COMPLETE}"| RECON
+    RECON -->|"⑧ status: REPORT_READY\nUpdate all completed jobs"| DB
+    RECON -->|"az deployment group delete\nDestroy ephemeral infra"| BICEP
+
+    %% ── Node styles
+    classDef user     fill:#1D4ED8,stroke:#1E3A8A,color:#fff,font-weight:bold
+    classDef frontend fill:#0369A1,stroke:#075985,color:#fff
+    classDef backend  fill:#0A2342,stroke:#1E40AF,color:#fff
+    classDef data     fill:#6D28D9,stroke:#5B21B6,color:#fff
+    classDef comms    fill:#B45309,stroke:#92400E,color:#fff
+    classDef cron     fill:#15803D,stroke:#166534,color:#fff,font-weight:bold
+    classDef kv       fill:#374151,stroke:#1F2937,color:#fff
+    classDef bicep    fill:#991B1B,stroke:#7F1D1D,color:#fff,font-weight:bold
+    classDef orch     fill:#7C2D12,stroke:#6C1D12,color:#fff
+    classDef process  fill:#9A3412,stroke:#7C2D12,color:#fff
+    classDef storage  fill:#4C1D95,stroke:#3B0764,color:#fff
+    classDef recon    fill:#1F2937,stroke:#111827,color:#fff
+
+    class USER user
+    class GH frontend
+    class API,KV backend
+    class DB data
+    class ACS comms
+    class CRON cron
+    class BICEP bicep
+    class ORCH orch
+    class OSINT,LLM,PDF process
+    class BLOB storage
+    class RECON recon
+
+    linkStyle 0 stroke:#6B7280,stroke-dasharray:4
+    linkStyle 1,2,3,4,5,6,7,8 stroke:#0078D4,stroke-width:2px
+    linkStyle 9,10,11 stroke:#E85D04,stroke-width:2px
+    linkStyle 12,13,14 stroke:#16A34A,stroke-width:2px
+    linkStyle 15,16,17,18,19,20 stroke:#DC2626,stroke-width:2px
+    linkStyle 21,22 stroke:#7C3AED,stroke-width:2px
+    linkStyle 23,24,25 stroke:#6B7280,stroke-width:1.5px
 ```
 
----
+### 1.2 Execution Flows
+
+| # | Flow | Trigger | Key transitions |
+|---|------|---------|----------------|
+| A | Registration & Email Validation | User submits form | `PENDING_EMAIL_VALIDATION` → `EMAIL_VALIDATED` |
+| B | Platform Ownership Validation | User action (loop) | `COLLECTING_PLATFORMS` → `READY_TO_REPORT` |
+| C | Cron Detection & Provisioning | `node-cron` 10:00 AM UTC-6 | Queries DB · Bicep deploy if N > 0 |
+| D | Report Generation Pipeline | Bicep-provisioned Python Job | OSINT → LLM → PDF → Blob |
+| E | Delivery & Reconciliation | Orchestrator completion | `REPORT_READY` · Bicep teardown |
+
+### 1.3 Architecture Pattern
+
+This system implements **Serverless Orchestration with Ephemeral IaaS**:
+
+- **Control plane** (Node.js, always-on, scale-to-zero): manages job lifecycle, user auth, and schedules the report generation cycle via an internal `node-cron` scheduler. When jobs are ready, it provisions execution infrastructure using the Azure SDK (`az deployment group create`).
+- **Execution plane** (Python, ephemeral): exists only while there is work to do. Each report is processed in an independent flow within the same Container Apps Job. Parallelism is bounded by `OSINT_MAX_CONCURRENT` to control cost.
+- **Reconciliation** (Node.js internal endpoint `/internal/jobs/reconcile`): the Python orchestrator calls back to Node.js when all jobs complete. Node.js validates execution, updates Cosmos DB status to `REPORT_READY`, and triggers Bicep teardown via Azure SDK.
+- **Zero residual cost**: at rest, only Cosmos DB Serverless (pay-per-RU) and Container Apps (scale-to-zero) incur costs. Estimated idle cost: < $7 USD/month.
 
 ## 2. Platform Validation Sequence Diagram
 
@@ -209,11 +293,33 @@ Encryption(
 
 ---
 
-### ADR-004: Orchestrator Trigger — GitHub Actions Cron vs. Azure Function Timer
+### ADR-004: Orchestrator Trigger — Internal `node-cron` Scheduler
 
-**Decision:** **GitHub Actions Cron** (MVP) → **Azure Function Timer** (v0.2)
+**Decision:** **Internal `node-cron` scheduler** in the Node.js API (final).
 
-**MVP rationale:** GitHub Actions is free for public repos, visible in the repo (open source transparency), and sufficient for the hackathon. The limitation (±5 min cron precision) is acceptable for the use case. The workflow deploys the orchestrator via Bicep if there are jobs, or terminates in <10 seconds if there is no work.
+**Rationale:**
+
+- **Simpler architecture**: The scheduler runs inside the always-on API container. No external workflow orchestration needed.
+- **Cost**: Zero cost for GitHub Actions (which was consumed by the cron job runner). Scale-to-zero handles idle cost.
+- **Transparency**: The schedule is code-managed (see `src/services/cronService.ts`), visible in the repository, and can be modified without workflow YAML changes.
+- **Reliability**: Running inside the Node.js process eliminates failure modes from external CI systems. The API naturally restarts on crashes; cron job state is re-evaluated every minute.
+- **Future flexibility**: Can easily integrate real-time job detection without external triggers. Planned for v0.2+: WebSocket updates on job status.
+
+**Implementation:**
+```typescript
+// Backend: src/services/cronService.ts
+import cron from 'node-cron';
+
+export function initReportGenerationCron() {
+  // Every day at 10:00 AM UTC-6
+  cron.schedule('0 10 * * *', async () => {
+    const readyJobs = await cosmosService.queryJobsByStatus('READY_TO_REPORT');
+    if (readyJobs.length > 0) {
+      await provisionOrchestrator(readyJobs.map(j => j.id));
+    }
+  }, { timezone: 'America/Mexico_City' });
+}
+```
 
 ---
 
