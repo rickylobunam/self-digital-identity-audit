@@ -7,8 +7,8 @@
 
 ## 🎯 Two Key Decisions
 
-1. **Cron interno en Node.js** — Use `node-cron` scheduler internally within the API instead of relying on GitHub Actions or external services.
-2. **Sin mini-app en correo** — Email only sends a link with query params (`https://[org].github.io/sdia?jobId=xxx&token=yyy`). GitHub Pages SPA handles all query param parsing and flow continuation.
+1. **Internal Cron in Node.js** — Use `node-cron` scheduler internally within the API instead of relying on GitHub Actions or external services.
+2. **No mini-app in email** — Email only sends a link with query params (`https://[org].github.io/sdia?jobId=xxx&token=yyy`). GitHub Pages SPA handles all query param parsing and flow continuation.
 
 ---
 
@@ -178,21 +178,6 @@ chore(infra): remove GitHub Actions report-generator workflow
 5. **→ VALIDATION**: Run full test suite and verify cron behavior in local environment
 
 ---
-
-## 📝 Implementation Checklist
-
-- [ ] Backend: cronService.ts implementation (node-cron initialization)
-- [ ] Backend: orchestration.ts (Bicep provisioning, job management)
-- [ ] Backend: Internal trigger endpoint POST /api/internal/trigger-report-cycle
-- [ ] Backend: Unit tests for cronService (Jest)
-- [ ] Backend: Integration tests for orchestrator provisioning
-- [ ] Docker Compose: Add CRON_* environment variables
-- [ ] Local testing: Verify manual trigger works
-- [ ] Local testing: Verify scheduler behavior (use CRON_SCHEDULE=*/5 * * * * for 5-min intervals)
-- [ ] Documentation: Update README with local scheduler testing instructions
-- [ ] Code review: Review all changes with team
-- [ ] Staging deployment: Test in Azure dev environment
-- [ ] Production deployment: Monitor first 24h after go-live
 
 ---
 
