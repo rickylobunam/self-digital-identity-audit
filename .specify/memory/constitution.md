@@ -68,14 +68,19 @@ Trigger:     Node.js API → ACS SDK
 
 ### 3.5 Report Orchestrator (ephemeral, on-demand)
 ```
-Trigger:     GitHub Actions cron (10:00 AM UTC-6 / Mexico) OR Azure Function timer
+Trigger:     Internal node-cron (10:00 AM UTC-6 / America/Mexico_City)
+             Running within always-on Node.js API container
+             Initial MVP considered GitHub Actions; moved to internal scheduler for simplicity
 Runtime:     Python 3.11
 Framework:   FastAPI
 OSINT:       Maigret + httpx (public authorized scraping)
 LLM:         Azure OpenAI (gpt-4o-mini) via Azure AI Foundry
 PDF:         Markdown → HTML (Jinja2) → PDF (WeasyPrint) → password (pikepdf)
-Hosting:     Azure Container Apps Job — deployed by Bicep, destroyed post-run
+Hosting:     Azure Container Apps Job — provisioned by Bicep when jobs ready, destroyed post-run
+Deployment:  Internal Node.js API (via Azure SDK) → Bicep deployment → Container Apps Job
 ```
+
+**Note on scheduler:** The `node-cron` scheduler runs inside the always-on Node.js Fastify API container at 10:00 AM UTC-6. It queries Cosmos DB for `READY_TO_REPORT` jobs and provisions the ephemeral Python orchestrator only if jobs exist. No external GitHub Actions workflow or Azure Function Timer is involved.
 
 ### 3.6 Infrastructure as Code
 ```
