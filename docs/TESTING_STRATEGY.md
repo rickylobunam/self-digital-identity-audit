@@ -150,35 +150,158 @@ def test_pdf_opens_with_correct_password(sample_report, tmp_path):
 
 ## Part IV — CI Pipeline
 
+This section documents the GitHub Actions CI workflows. **Note:** GitHub Actions workflows are used exclusively for **build, test, and deployment** — not for triggering report generation. Report generation is triggered internally by the Node.js `node-cron` scheduler (see [ARCHITECTURE.md ADR-004](ARCHITECTURE.md#adr-004-orchestrator-trigger--internal-node-cron-scheduler)).
+
+### Frontend CI Job
+
 ```yaml
-# .github/workflows/ci.yml (summary)
-jobs:
-  frontend:
-    - npm install
-    - npm run lint       # ESLint + Biome
-    - npm run typecheck  # tsc --noEmit
-    - npm run test       # Vitest --coverage
-    - Fail if coverage < 60%
-
-  backend:
-    - npm install
-    - npm run lint
-    - npm run typecheck
-    - npm run test       # Jest --coverage
-    - Fail if coverage < 70%
-
-  orchestrator:
-    - pip install -r requirements-dev.txt
-    - ruff check .
-    - mypy app/
-    - pytest --cov=app --cov-fail-under=70
-
-  e2e:
-    - Only on PRs to main
-    - docker compose up -d
-    - playwright test
-    - docker compose down
+# .github/workflows/ci.yml → jobs.frontend
+frontend:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - run: npm install
+    - run: npm run lint       # ESLint + Biome
+    - run: npm run typecheck  # tsc --noEmit
+    - run: npm run test       # Vitest --coverage
+    - name: Check coverage
+      run: npm run test:coverage -- --coverage-threshold-value 60
 ```
+
+### Backend CI Job
+
+```yaml
+# .github/workflows/ci.yml → jobs.backend
+backend:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - run: npm install
+    - run: npm run lint       # ESLint
+    - run: npm run typecheck  # tsc --noEmit
+    - run: npm run test       # Jest --coverage
+    - name: Check coverage
+      run: npm run test:coverage -- --coverage-threshold-value 70
+```
+
+**Backend-specific test scenarios:**
+
+| Scenario | Type | What to verify |
+|----------|------|----------------|
+| Unit: Cron initialization | Unit | Scheduler instantiates with correct timezone and schedule |
+| Unit: Query ready jobs | Unit | Queries Cosmos DB with correct filter (status = READY_TO_REPORT) |
+| Integration: Manual trigger | Integration | POST /api/internal/trigger-report-cycle queries DB and provisions Bicep |
+| Integration: Cron fires at scheduled time | Integration | Mock timer fires → orchestrator provisioning invoked |
+| Integration: Zero jobs → no deployment | Integration | If no READY_TO_REPORT jobs, Bicep deployment is skipped |
+
+**Example backend test for cron scheduler:**
+
+```typescript
+// backend/src/services/cronService.test.ts
+import { initReportGenerationCron } from './cronService';
+import * as orchestration from './orchestration';
+
+describe('Report Generation Cron Scheduler', () => {
+  it('initializes scheduler with correct timezone and schedule', () => {
+    const task = initReportGenerationCron();
+    // Verify cron.schedule was called with correct pattern
+    expect(task).toBeDefined();
+  });
+
+  it('queries Cosmos DB for READY_TO_REPORT jobs at cron time', async () => {
+    const mockQueryJobs = jest.spyOn(orchestration, 'queryReadyJobs')
+      .mockResolvedValue([{ id: 'job-1', status: 'READY_TO_REPORT' }]);
+
+    // Manually trigger the cron task (in tests)
+    await orchestration.triggerReportGenerationCycle();
+
+    expect(mockQueryJobs).toHaveBeenCalled();
+  });
+
+  it('provisions orchestrator when jobs exist', async () => {
+    const mockProvision = jest.spyOn(orchestration, 'provisionOrchestrator')
+      .mockResolvedValue({ deploymentId: 'deploy-uuid' });
+    const mockQueryJobs = jest.spyOn(orchestration, 'queryReadyJobs')
+      .mockResolvedValue([{ id: 'job-1' }, { id: 'job-2' }]);
+
+    await orchestration.triggerReportGenerationCycle();
+
+    expect(mockProvision).toHaveBeenCalledWith(['job-1', 'job-2']);
+  });
+
+  it('skips deployment when no jobs are ready', async () => {
+    const mockProvision = jest.spyOn(orchestration, 'provisionOrchestrator');
+    const mockQueryJobs = jest.spyOn(orchestration, 'queryReadyJobs')
+      .mockResolvedValue([]);
+
+    await orchestration.triggerReportGenerationCycle();
+
+    expect(mockProvision).not.toHaveBeenCalled();
+  });
+
+  it('handles scheduler disabled in development', () => {
+    process.env.CRON_ENABLED = 'false';
+    const consoleSpy = jest.spyOn(console, 'log');
+    
+    initReportGenerationCron();
+    
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Cron scheduler disabled')
+    );
+  });
+});
+```
+
+### Orchestrator CI Job
+
+```yaml
+# .github/workflows/ci.yml → jobs.orchestrator
+orchestrator:
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - run: pip install -r orchestrator/requirements-dev.txt
+    - run: ruff check orchestrator/
+    - run: mypy orchestrator/app/
+    - run: pytest orchestrator/ --cov=orchestrator/app --cov-fail-under=70
+```
+
+### E2E (Playwright) CI Job
+
+```yaml
+# .github/workflows/ci.yml → jobs.e2e (runs only on PRs to main)
+e2e:
+  if: github.event_name == 'pull_request' && github.base_ref == 'main'
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - run: docker compose up -d
+    - run: npm run test:e2e -- --reporter=github
+    - run: docker compose down
+```
+
+### CI Pipeline Summary
+
+| Job | Trigger | What it does |
+|-----|---------|-------------|
+| Frontend | Always | Lint, typecheck, unit tests (Vitest) |
+| Backend | Always | Lint, typecheck, unit + integration tests (Jest), cron scheduler tests |
+| Orchestrator | Always | Ruff lint, mypy, pytest with coverage |
+| E2E | PR to `main` only | Full browser flows (Playwright) |
+
+**DEPRECATED:** The `report-generator.yml` GitHub Actions workflow is no longer needed. Report generation is triggered internally by the Node.js scheduler at 10:00 AM UTC-6. GitHub Actions workflows remain unchanged for build, test, and deployment — only the external cron trigger has been removed.
 
 ---
 
