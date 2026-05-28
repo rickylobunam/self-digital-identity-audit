@@ -95,7 +95,136 @@ ruff check .                     # Linting
 
 ---
 
-## 4. Adding a New Platform (e.g., Twitch)
+## 4. Local Development — Running the Cron Scheduler
+
+The report generation cycle is triggered by an **internal `node-cron` scheduler** running inside the Node.js API container. This section explains how to configure and test it locally.
+
+### 4.1 Understanding the Scheduler
+
+The scheduler:
+- Runs within the always-on Node.js API (`src/services/cronService.ts`)
+- Fires daily at 10:00 AM UTC-6 (America/Mexico_City timezone)
+- Queries Cosmos DB for jobs with status `READY_TO_REPORT`
+- If jobs exist, provisions the Python orchestrator via Bicep IaC
+- Requires **no external GitHub Actions workflow**
+
+### 4.2 Environment Variables
+
+Configure these in your `.env` file:
+
+```bash
+# Cron scheduler configuration
+CRON_ENABLED=true                          # Set to false to disable scheduler in dev
+CRON_TIMEZONE=America/Mexico_City
+CRON_SCHEDULE=0 10 * * *                   # Cron expression: 10:00 AM daily
+CRON_LOG_LEVEL=debug                       # Set to 'info' or 'debug' for troubleshooting
+```
+
+**Cron expression reference:**
+- `0 10 * * *` = 10:00 AM every day
+- `*/5 * * * *` = every 5 minutes (useful for testing)
+- `0 0 * * *` = midnight (UTC base time, adjusted by timezone)
+
+### 4.3 Manual Trigger for Testing
+
+To manually trigger the report generation cycle without waiting for the cron schedule:
+
+**Via npm script:**
+```bash
+cd backend
+npm run test:cron
+```
+
+**Via HTTP API (requires valid sessionToken):**
+```bash
+# Trigger the cron cycle on demand
+curl -X POST http://localhost:3000/api/internal/trigger-report-cycle \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_INTERNAL_TOKEN"
+```
+
+**Response:**
+```json
+{
+  "message": "Report generation cycle triggered",
+  "jobsFound": 3,
+  "provisioned": true,
+  "bicepDeploymentId": "uuid-xxx"
+}
+```
+
+### 4.4 Development vs. Production Configuration
+
+| Setting | Development | Production |
+|---------|-------------|-----------|
+| `CRON_ENABLED` | `false` (manual trigger only) | `true` |
+| `CRON_SCHEDULE` | `*/5 * * * *` (every 5 min) | `0 10 * * *` (10 AM daily) |
+| `CRON_LOG_LEVEL` | `debug` | `info` |
+| Manual endpoint | Enabled for testing | Disabled (internal only) |
+
+**To disable the scheduler in development (recommended for local testing):**
+```bash
+# In .env.local or .env
+CRON_ENABLED=false
+```
+
+Then manually trigger via the curl command above or npm script.
+
+### 4.5 Docker Compose Notes
+
+The scheduler runs inside the backend container. To verify it's active:
+
+```bash
+# View scheduler logs
+docker compose logs backend | grep cron
+
+# Expected output (if enabled):
+# backend | ⏰ Cron scheduler initialized: America/Mexico_City, 0 10 * * *
+# backend | 🎯 Next execution: 2026-05-28T10:00:00-06:00
+```
+
+If the scheduler is disabled (`CRON_ENABLED=false`), you'll see:
+```
+backend | ⏰ Cron scheduler disabled (manual trigger only)
+```
+
+### 4.6 Scheduler Implementation Reference
+
+The scheduler is initialized in `src/services/cronService.ts`:
+
+```typescript
+// backend/src/services/cronService.ts
+import cron from 'node-cron';
+import { queryReadyJobs, provisionOrchestrator } from './orchestration';
+
+export function initReportGenerationCron() {
+  if (process.env.CRON_ENABLED === 'false') {
+    console.log('⏰ Cron scheduler disabled (manual trigger only)');
+    return;
+  }
+
+  const timezone = process.env.CRON_TIMEZONE || 'America/Mexico_City';
+  const schedule = process.env.CRON_SCHEDULE || '0 10 * * *';
+
+  const task = cron.schedule(schedule, async () => {
+    console.log('🎯 Cron fired: querying READY_TO_REPORT jobs...');
+    const jobs = await queryReadyJobs();
+    if (jobs.length > 0) {
+      console.log(`✅ Found ${jobs.length} jobs. Provisioning orchestrator...`);
+      await provisionOrchestrator(jobs.map(j => j.id));
+    } else {
+      console.log('ℹ️  No jobs ready. Skipping deployment.');
+    }
+  }, { timezone });
+
+  console.log(`⏰ Cron scheduler initialized: ${timezone}, ${schedule}`);
+  return task;
+}
+```
+
+---
+
+## 5. Adding a New Platform (e.g., Twitch)
 
 **Step 1: Backend — Verifier**
 ```typescript
@@ -166,7 +295,7 @@ export const validationGuides: Record<PlatformId, ValidationGuide> = {
 
 ---
 
-## 5. Azure Deployment
+## 6. Azure Deployment
 
 ### Initial setup (one-time per environment)
 
@@ -190,7 +319,7 @@ bash scripts/setup-github-oidc.sh --env dev
 
 ---
 
-## 6. Full PR Workflow
+## 7. Full PR Workflow
 
 ```bash
 # 1. Sync with upstream
@@ -217,7 +346,7 @@ gh pr create --title "feat(backend): Instagram validation" --body "Closes #12" -
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### Error: Cosmos DB connection refused locally
 ```bash
