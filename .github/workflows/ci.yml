@@ -1,0 +1,178 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Frontend ───────────────────────────────────────────────────────
+  frontend:
+    name: Frontend — Lint, TypeCheck, Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Check coverage threshold (60%)
+        run: npm run test:coverage -- --coverage.thresholds.lines=60
+
+      - name: Build
+        run: npm run build
+
+  # ── Backend ────────────────────────────────────────────────────────
+  backend:
+    name: Backend — Lint, TypeCheck, Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      cosmos-emulator:
+        image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+        ports:
+          - 8081:8081
+        env:
+          AZURE_COSMOS_EMULATOR_PARTITION_COUNT: 3
+          AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE: "false"
+        options: >-
+          --health-cmd "curl -fk https://localhost:8081/_explorer/emulator.pem"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test with coverage
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          COSMOS_ENDPOINT: https://localhost:8081
+          COSMOS_KEY: C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMcZcLU==
+          JWT_SECRET: test-secret-ci
+          NODE_TLS_REJECT_UNAUTHORIZED: "0"
+
+      - name: Check coverage threshold (70%)
+        run: npm run test:coverage -- --coverageThreshold='{"global":{"lines":70}}'
+
+  # ── Orchestrator ───────────────────────────────────────────────────
+  orchestrator:
+    name: Orchestrator — Lint, MyPy, Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: orchestrator/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type check (mypy)
+        run: mypy app/
+
+      - name: Test with coverage
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+        env:
+          USE_LLM_MOCK: "true"
+          PDF_OWNER_SECRET: test-owner-secret
+          COSMOS_ENDPOINT: https://localhost:8081
+          COSMOS_KEY: C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMcZcLU==
+
+  # ── E2E (solo en PR a main) ────────────────────────────────────────
+  e2e:
+    name: E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    if: github.base_ref == 'main'
+    needs: [frontend, backend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Start services
+        run: docker compose up -d cosmos-emulator azurite mailhog backend frontend
+        env:
+          COSMOS_KEY: C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMcZcLU==
+          JWT_SECRET: test-secret-e2e
+
+      - name: Wait for services
+        run: |
+          npx wait-on http://localhost:3000/health http://localhost:5173 --timeout 60000
+
+      - name: Install Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+
+      - name: Stop services
+        if: always()
+        run: docker compose down

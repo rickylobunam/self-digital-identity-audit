@@ -1,0 +1,123 @@
+version: '3.9'
+
+services:
+  # ── Cosmos DB Emulator ──────────────────────────────────────────────
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: sdia-cosmos
+    ports:
+      - "8081:8081"
+      - "10251:10251"
+      - "10252:10252"
+      - "10253:10253"
+      - "10254:10254"
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=3
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=false
+    mem_limit: 3g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8081/_explorer/emulator.pem"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Azurite (Azure Blob Storage emulator) ──────────────────────────
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: sdia-azurite
+    ports:
+      - "10000:10000"  # Blob
+      - "10001:10001"  # Queue
+      - "10002:10002"  # Table
+    command: azurite --blobHost 0.0.0.0 --queueHost 0.0.0.0 --tableHost 0.0.0.0
+
+  # ── Mailhog (captures emails in development) ───────────────────────
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: sdia-mailhog
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI → http://localhost:8025
+    logging:
+      driver: none
+
+  # ── Backend (Node.js Fastify) ───────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: sdia-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - COSMOS_ENDPOINT=https://cosmos-emulator:8081
+      - COSMOS_KEY=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMcZcLU==
+      - COSMOS_DB_NAME=sdia
+      - COSMOS_CONTAINER=audit-jobs
+      - ACS_CONNECTION_STRING=endpoint=http://mailhog:1025;
+      - JWT_SECRET=dev-secret-not-for-production
+      - ALLOWED_ORIGINS=http://localhost:5173
+      - RATE_LIMIT_MAX=10
+      - NODE_TLS_REJECT_UNAUTHORIZED=0  # Cosmos emulator uses self-signed cert
+    volumes:
+      - ./backend/src:/app/src
+      - /app/node_modules
+    depends_on:
+      cosmos-emulator:
+        condition: service_healthy
+    command: npm run dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend (Vite React) ───────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: sdia-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    volumes:
+      - ./frontend/src:/app/src
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0
+
+  # ── Orchestrator (Python FastAPI) — local testing only ─────────────
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile.dev
+    container_name: sdia-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-}
+      - AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+      - COSMOS_ENDPOINT=https://cosmos-emulator:8081
+      - COSMOS_KEY=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMcZcLU==
+      - BLOB_CONNECTION_STRING=DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UKvz1KFGVcZOTCgb=;BlobEndpoint=http://azurite:10000/devstoreaccount1;
+      - PDF_OWNER_SECRET=dev-owner-secret
+      - USE_LLM_MOCK=true
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    volumes:
+      - ./orchestrator/app:/app/app
+      - ./orchestrator/templates:/app/templates
+    depends_on:
+      - cosmos-emulator
+      - azurite
+    profiles:
+      - orchestrator  # Only started with: docker compose --profile orchestrator up
+
+networks:
+  default:
+    name: sdia-network

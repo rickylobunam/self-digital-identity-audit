@@ -1,0 +1,207 @@
+name: Report Generator — Daily Batch
+
+on:
+  schedule:
+    # 10:00 AM UTC-6 (México City) = 16:00 UTC
+    # En horario de verano CDT (UTC-5) = 15:00 UTC
+    # Usar 16:00 UTC como base (conservador)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      force_run:
+        description: 'Force execution even if no pending jobs (for testing)'
+        required: false
+        default: 'false'
+        type: boolean
+      dry_run:
+        description: 'Dry run: query jobs but do NOT process or deploy'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ORCHESTRATOR_IMAGE: sdia-orchestrator
+  BICEP_TEMPLATE: infra/main.bicep
+  BICEP_PARAMS: infra/parameters/prod.bicepparam
+
+jobs:
+  # ── Paso 1: Consultar Cosmos DB ────────────────────────────────────
+  check-pending-jobs:
+    name: Check pending jobs in Cosmos DB
+    runs-on: ubuntu-latest
+    outputs:
+      has_jobs: ${{ steps.check.outputs.has_jobs }}
+      job_count: ${{ steps.check.outputs.job_count }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Check for READY_TO_REPORT jobs
+        id: check
+        run: |
+          # Query Cosmos DB via REST API
+          COSMOS_ENDPOINT="${{ secrets.COSMOS_ENDPOINT }}"
+          COSMOS_KEY="${{ secrets.COSMOS_KEY }}"
+          DB="sdia"
+          CONTAINER="audit-jobs"
+
+          # Query: SELECT COUNT(1) FROM c WHERE c.status = 'READY_TO_REPORT'
+          RESPONSE=$(az cosmosdb sql query \
+            --account-name ${{ secrets.COSMOS_ACCOUNT_NAME }} \
+            --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+            --database-name $DB \
+            --container-name $CONTAINER \
+            --query-text "SELECT VALUE COUNT(1) FROM c WHERE c.status = 'READY_TO_REPORT'" \
+            --output json 2>/dev/null || echo "[0]")
+
+          JOB_COUNT=$(echo $RESPONSE | python3 -c "import json,sys; data=json.load(sys.stdin); print(data[0] if data else 0)" 2>/dev/null || echo "0")
+          echo "job_count=${JOB_COUNT}" >> $GITHUB_OUTPUT
+
+          if [ "${{ inputs.force_run }}" = "true" ] || [ "$JOB_COUNT" -gt "0" ]; then
+            echo "has_jobs=true" >> $GITHUB_OUTPUT
+            echo "✅ Found ${JOB_COUNT} pending job(s)"
+          else
+            echo "has_jobs=false" >> $GITHUB_OUTPUT
+            echo "⏭️  No pending jobs. Skipping infrastructure deployment."
+          fi
+
+  # ── Paso 2: Build imagen del orquestador (si hay jobs) ─────────────
+  build-orchestrator:
+    name: Build Orchestrator Image
+    needs: check-pending-jobs
+    if: needs.check-pending-jobs.outputs.has_jobs == 'true' && inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push orchestrator image to ACR
+        working-directory: orchestrator
+        run: |
+          az acr build \
+            --registry ${{ secrets.ACR_LOGIN_SERVER }} \
+            --image ${{ env.ORCHESTRATOR_IMAGE }}:${{ github.sha }} \
+            --image ${{ env.ORCHESTRATOR_IMAGE }}:latest \
+            --file Dockerfile \
+            .
+
+  # ── Paso 3: Desplegar infraestructura efímera con Bicep ────────────
+  deploy-and-run:
+    name: Deploy Bicep + Run Orchestrator
+    needs: [check-pending-jobs, build-orchestrator]
+    if: needs.check-pending-jobs.outputs.has_jobs == 'true' && inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Deploy the orchestrator as Azure Container App Job (ejecuta una vez y termina)
+      - name: Deploy orchestrator as Container App Job (Bicep)
+        run: |
+          az deployment group create \
+            --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+            --template-file ${{ env.BICEP_TEMPLATE }} \
+            --parameters ${{ env.BICEP_PARAMS }} \
+            --parameters orchestratorImageTag=${{ github.sha }} \
+            --parameters deployOrchestrator=true \
+            --name "orchestrator-$(date +%Y%m%d-%H%M)"
+
+      # Execute the Container App Job (no el App; el Job se escala a 0 automáticamente)
+      - name: Start orchestrator job execution
+        id: run_job
+        run: |
+          az containerapp job start \
+            --name sdia-orchestrator-job \
+            --resource-group ${{ secrets.ACA_RESOURCE_GROUP }}
+
+          echo "⏳ Waiting for orchestrator job to complete..."
+
+      # Wait up to 30 minutes for completion
+      - name: Wait for job completion
+        timeout-minutes: 35
+        run: |
+          MAX_ATTEMPTS=70
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            STATUS=$(az containerapp job execution list \
+              --name sdia-orchestrator-job \
+              --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+              --query "[0].properties.status" \
+              --output tsv 2>/dev/null || echo "Unknown")
+
+            echo "Attempt ${ATTEMPT}/${MAX_ATTEMPTS} — Status: ${STATUS}"
+
+            if [ "$STATUS" = "Succeeded" ]; then
+              echo "✅ Orchestrator completed successfully"
+              break
+            elif [ "$STATUS" = "Failed" ]; then
+              echo "❌ Orchestrator job FAILED"
+              exit 1
+            fi
+
+            sleep 30
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ $ATTEMPT -ge $MAX_ATTEMPTS ]; then
+            echo "⏱️ Timeout: orchestrator did not complete in 35 minutes"
+            exit 1
+          fi
+
+      # Los logs del job quedan en Azure Monitor / Log Analytics
+      - name: Get orchestrator logs (summary)
+        if: always()
+        run: |
+          echo "📋 Fetching last 50 log lines..."
+          az containerapp job execution logs show \
+            --name sdia-orchestrator-job \
+            --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+            --execution-name $(az containerapp job execution list \
+              --name sdia-orchestrator-job \
+              --resource-group ${{ secrets.ACA_RESOURCE_GROUP }} \
+              --query "[0].name" --output tsv) \
+            --tail 50 2>/dev/null || echo "Logs not available"
+
+  # ── Paso 4: Resumen ────────────────────────────────────────────────
+  summary:
+    name: Summary
+    needs: [check-pending-jobs, deploy-and-run]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Job Summary
+        run: |
+          echo "## 📊 Report Generator Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Campo | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🕐 Execution | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📋 Pending jobs | ${{ needs.check-pending-jobs.outputs.job_count }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🚀 Infrastructure deployed | ${{ needs.check-pending-jobs.outputs.has_jobs }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ✅ Final status | ${{ needs.deploy-and-run.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
