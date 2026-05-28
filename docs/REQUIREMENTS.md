@@ -71,11 +71,11 @@ THEN    the system must:
 ### FR-06 — Report Generation Process (Batch)
 ```
 GIVEN   it is 10:00 AM UTC-6
-WHEN    the cron trigger executes
+WHEN    the internal node-cron scheduler (running in the Node.js API container) executes
 THEN    the orchestrator must:
   - Query Cosmos DB for jobs with status READY_TO_REPORT
   - If N = 0: terminate without deploying infrastructure
-  - If N > 0: deploy ACA via Bicep
+  - If N > 0: deploy ACA via Bicep with a Container Apps Job
   - Per job in parallel (configurable max concurrency):
     - Run OSINT per VALIDATED platform of the job
     - Build prompt with findings (atomic inference)
@@ -87,6 +87,8 @@ THEN    the orchestrator must:
     - Send email with password and link
     - Update status to REPORT_READY
 ```
+
+**Timing guarantee**: The scheduler maintains ±1 min precision and runs daily as a batch process within the always-on Node.js API container. No external CI/CD pipeline or GitHub Actions workflow is involved.
 
 ### FR-07 — PDF Protection
 ```
