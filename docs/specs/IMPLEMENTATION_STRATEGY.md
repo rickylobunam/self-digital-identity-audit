@@ -67,8 +67,27 @@ These principles are non-negotiable and precede any delivery pressure:
 
 ### 2.2 Working Constraints
 
-- **Single developer (H0):** all roles (R01–R04) are held by one person. Time-boxing per
-  session is mandatory to prevent context overload.
+
+- **Single developer (H0), eight skills:** Ricardo holds all roles in H0, but each working
+  session is entered from a specific **skill perspective** (see table below). This prevents
+  context overload by limiting the cognitive surface to one domain at a time.
+  Time-boxing per session to **90 minutes maximum** is mandatory; switch skills or stop.
+  A session always begins by reading `AGENTS.md` + `constitution.md` to restore context.
+
+| Skill ID | Role / Perspective | Primary Layer | When to activate |
+|---|---|---|---|
+| `sdia-architect` | System design, ADRs, cross-component | All | New flow design, ADR proposal, cross-boundary impact |
+| `sdia-backend-engineer` | Node.js Fastify TypeScript API | `backend/` | Any route, service, plugin, or Jest test |
+| `sdia-frontend-engineer` | Vite React TypeScript SPA | `frontend/` | Any page, component, MSW mock, or Vitest test |
+| `sdia-orchestrator-engineer` | Python OSINT + LLM + PDF pipeline | `orchestrator/` | Any extractor, AI analysis, PDF gen, or pytest |
+| `sdia-infra-engineer` | Azure Bicep IaC + Docker Compose | `infra/` | Any Bicep module, deploy script, or cost review |
+| `sdia-security-privacy` | Security review + Privacy-by-Design | All | Pre-merge checklist, any token/auth/secret work |
+| `sdia-tdd-coach` | TDD discipline + Jidoka enforcement | All | Session start, stuck test, coverage gap, Jidoka stop |
+| `sdia-tech-writer` | Specs, AGENTS.md, CHANGELOG, README | `docs/` | Phase boundary, new US, AGENTS.md update |
+
+  Skills are stored in `.claude/skills/` and packaged as `.skill` files (Claude.ai) per
+  the standard in `docs/skills/README.md`. Load only the skill relevant to the current task.
+  
 - **Public open-source repo:** every commit, test, and comment is visible. Write accordingly.
 - **100% English in the repository:** all code, comments, docs, config, commit messages,
   CI/CD, and spec files must be in English. Conversations with the developer may be in Spanish.
