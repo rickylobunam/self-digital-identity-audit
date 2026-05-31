@@ -39,6 +39,13 @@ test-results/
 # ── Docker ────────────────────────────────────────────────────────
 docker-compose.override.yml
 
+# ── Local HTTPS Certificates (Development Only) ────────────────────
+.certs/
+*.pem
+*.key
+*.crt
+*.pfx
+
 # ── IDEs ──────────────────────────────────────────────────────────
 .vscode/settings.json
 .idea/
