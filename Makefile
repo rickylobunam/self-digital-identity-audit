@@ -107,19 +107,15 @@ clean:
 
 certs:
 	@echo "$(BLUE)Generating local HTTPS certificates...$(NC)"
-	@if command -v mkcert &> /dev/null; then \
-		echo "$(GREEN)Using mkcert$(NC)"; \
-		mkdir -p .certs; \
-		mkcert -key-file .certs/key.pem -cert-file .certs/cert.pem localhost 127.0.0.1 sdia.local; \
-		echo "$(GREEN)✓ Certificates generated in .certs/$(NC)"; \
-	else \
-		echo "$(YELLOW)mkcert not found. Using OpenSSL fallback...$(NC)"; \
-		mkdir -p .certs; \
-		openssl req -x509 -newkey rsa:4096 -keyout .certs/key.pem -out .certs/cert.pem -days 365 -nodes \
-			-subj "/CN=localhost"; \
-		echo "$(GREEN)✓ Self-signed certificate generated (localhost only)$(NC)"; \
-	fi
 	@echo "$(YELLOW)Note: Certificates are for local development only. Do not commit.$(NC)"
+	@echo ""
+	@if [ "$(OS)" = "Windows_NT" ]; then \
+		echo "$(GREEN)Running PowerShell certificate generator (Windows)$(NC)"; \
+		pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/certs/cer.ps1; \
+	else \
+		echo "$(GREEN)Running bash certificate generator (Linux/macOS)$(NC)"; \
+		bash scripts/certs/cer.sh; \
+	fi
 
 docker-up:
 	@echo "$(BLUE)Starting docker-compose services...$(NC)"
