@@ -4,7 +4,7 @@
 # IMPORTANT: These certificates are for LOCAL DEVELOPMENT ONLY
 # Never use these in production
 
-set -e
+set -euo pipefail
 
 CERT_DIR=".certs"
 CERT_NAME="localhost"
@@ -32,11 +32,11 @@ echo "   Do not use in production."
 echo ""
 
 # Check if mkcert is available
-if command -v mkcert &> /dev/null; then
+if command -v mkcert >/dev/null 2>&1; then
     echo "✓ Using mkcert for certificate generation..."
     
     # Install local CA if not already done
-    if ! mkcert -CAROOT &> /dev/null; then
+    if ! mkcert -CAROOT >/dev/null 2>&1; then
         echo "Installing local CA..."
         mkcert -install
     fi
@@ -55,11 +55,23 @@ if command -v mkcert &> /dev/null; then
     echo "📌 Your local CA has been installed in your system trust store."
     echo "   Browsers will recognize these certificates as valid."
     
+
 else
     echo "⚠️  mkcert not found. Using OpenSSL fallback..."
     echo ""
+
+    # Validate OpenSSL is available before using it
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "❌ Error: neither mkcert nor openssl is installed."
+        echo ""
+        echo "Install one of them and retry:"
+        echo "  mkcert:  https://github.com/FiloSottile/mkcert"
+        echo "  openssl: sudo apt update && sudo apt install -y openssl"
+        exit 1
+    fi
+
     echo "Generating self-signed certificate with OpenSSL..."
-    
+
     # Generate private key and self-signed certificate using OpenSSL
     openssl req -x509 \
         -newkey rsa:2048 \
@@ -68,7 +80,7 @@ else
         -days 365 \
         -nodes \
         -subj "/CN=localhost/O=SDIA Local Dev/C=MX"
-    
+
     echo ""
     echo "✅ Self-signed certificate generated with OpenSSL:"
     echo "   Key:  $KEY_FILE"
@@ -78,6 +90,7 @@ else
     echo "   This is expected for self-signed certificates."
     echo "   You can safely proceed ('Advanced' → 'Proceed')."
 fi
+
 
 echo ""
 echo "📁 Certificate location: $CERT_DIR/"
