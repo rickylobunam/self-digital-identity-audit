@@ -1,6 +1,5 @@
-version: '3.9'
-
 services:
+  # ── Cosmos DB Emulator ──────────────────────────────────────────────
   # ── Cosmos DB Emulator ──────────────────────────────────────────────
   cosmos-emulator:
     image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
@@ -12,14 +11,15 @@ services:
       - "10253:10253"
       - "10254:10254"
     environment:
-      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=3
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=1
       - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=false
-    mem_limit: 3g
+    mem_limit: 2g
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost:8081/_explorer/emulator.pem"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 20
+      start_period: 180s
 
   # ── Azurite (Azure Blob Storage emulator) ──────────────────────────
   azurite:
@@ -38,14 +38,10 @@ services:
     ports:
       - "1025:1025"  # SMTP
       - "8025:8025"  # Web UI → http://localhost:8025
-    logging:
-      driver: none
 
   # ── Backend (Node.js Fastify) ───────────────────────────────────────
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.dev
+    image: node:22-bookworm-slim
     container_name: sdia-backend
     ports:
       - "3000:3000"
@@ -61,41 +57,52 @@ services:
       - ALLOWED_ORIGINS=http://localhost:5173
       - RATE_LIMIT_MAX=10
       - NODE_TLS_REJECT_UNAUTHORIZED=0  # Cosmos emulator uses self-signed cert
+    working_dir: /app
     volumes:
-      - ./backend/src:/app/src
-      - /app/node_modules
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
     depends_on:
       cosmos-emulator:
         condition: service_healthy
-    command: npm run dev
+    command: sh -c "npm install && npm run dev"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
 
   # ── Frontend (Vite React) ───────────────────────────────────────────
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
+    image: node:22-bookworm-slim
     container_name: sdia-frontend
     ports:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:3000
+    working_dir: /app
     volumes:
-      - ./frontend/src:/app/src
-      - /app/node_modules
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
     depends_on:
       - backend
-    command: npm run dev -- --host 0.0.0.0
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   # ── Orchestrator (Python FastAPI) — local testing only ─────────────
   orchestrator:
-    build:
-      context: ./orchestrator
-      dockerfile: Dockerfile.dev
+    image: python:3.11-slim-bookworm
     container_name: sdia-orchestrator
     ports:
       - "8000:8000"
@@ -109,14 +116,30 @@ services:
       - PDF_OWNER_SECRET=dev-owner-secret
       - USE_LLM_MOCK=true
       - NODE_TLS_REJECT_UNAUTHORIZED=0
+    working_dir: /app
     volumes:
-      - ./orchestrator/app:/app/app
-      - ./orchestrator/templates:/app/templates
+      - ./orchestrator:/app
     depends_on:
-      - cosmos-emulator
-      - azurite
+      cosmos-emulator:
+        condition: service_healthy
+      azurite:
+        condition: service_started
+    command: sh -c "pip install uv && uv sync --all-extras && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3);\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     profiles:
       - orchestrator  # Only started with: docker compose --profile orchestrator up
+
+volumes:
+  backend_node_modules:
+  frontend_node_modules:
 
 networks:
   default:
