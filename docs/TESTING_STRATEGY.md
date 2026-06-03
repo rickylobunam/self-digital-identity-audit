@@ -5,6 +5,43 @@
 
 ---
 
+## P0 Makefile Testing Targets
+
+The P0 bootstrap baseline is validated through the root Makefile and Docker Compose.
+
+Required local validation commands:
+
+```bash
+make lint
+make test
+make build
+make health
+make health-full
+docker compose config
+```
+Manual development workflow validation:
+
+```bash
+make dev
+make health
+make dev-down
+
+make dev-full
+make health-full
+make dev-down
+```
+Docker Compose workflow validation:
+
+```bash
+make docker-up
+make health
+make docker-down
+
+make docker-up-full
+make health-full
+make docker-down
+```
+
 ## Testing Pyramid
 
 ```
@@ -162,7 +199,7 @@ frontend:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
     - run: npm install
     - run: npm run lint       # ESLint + Biome
     - run: npm run typecheck  # tsc --noEmit
@@ -181,7 +218,7 @@ backend:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
     - run: npm install
     - run: npm run lint       # ESLint
     - run: npm run typecheck  # tsc --noEmit
@@ -286,7 +323,7 @@ e2e:
     - uses: actions/checkout@v4
     - uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
     - run: docker compose up -d
     - run: npm run test:e2e -- --reporter=github
     - run: docker compose down

@@ -649,8 +649,10 @@ on a clean repository with no application code.
 3. Verify CI workflow `.github/workflows/ci.yml` runs all 3 jobs (frontend, backend, orchestrator)
    and passes on empty test suites with coverage 0% (expected: threshold checks skip on empty).
 4. Verify `frontend/` and `backend/` scaffolds exist with correct package.json and TypeScript config.
-5. Verify `orchestrator/` has `requirements.txt`, `app/main.py`, and `pytest` runs with no errors.
-6. Create and push Phase 0 AGENTS.md.
+5. Verify orchestrator has pyproject.toml, uv.lock, app/main.py, and pytest runs...
+6. make docker-up + make health
+7. make docker-up-full + make health-full
+8. Create and push Phase 0 AGENTS.md.
 
 **Gate:** `git push origin develop` triggers CI → all jobs green → P0 complete.
 

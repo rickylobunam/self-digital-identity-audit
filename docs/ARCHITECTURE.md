@@ -440,7 +440,8 @@ self-digital-identity-audit/
 │   │   └── styles.css
 │   ├── tests/
 │   ├── Dockerfile
-│   └── requirements.txt
+│   ├── pyproject.toml
+│   └── uv.lock
 │
 ├── infra/
 │   ├── main.bicep
