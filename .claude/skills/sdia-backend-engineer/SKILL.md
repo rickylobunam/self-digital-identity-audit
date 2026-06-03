@@ -12,7 +12,7 @@ triggers the cron scheduler, and provisions the ephemeral Python orchestrator.
 ## Stack Reference
 
 ```
-Runtime:    Node.js 20 LTS
+Runtime:    Node.js 22 LTS
 Framework:  Fastify v4 + TypeScript strict mode
 Auth:       OTP email (ACS) + JWT HS256 (25h expiry)
 Database:   Azure Cosmos DB SDK v4 (@azure/cosmos)

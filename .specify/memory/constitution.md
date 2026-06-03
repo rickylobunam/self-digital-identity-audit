@@ -43,7 +43,7 @@ Build:       Vite → dist/ → GitHub Pages via Actions
 
 ### 3.2 Backend API (always-on)
 ```
-Runtime:     Node.js 20 LTS
+Runtime:     Node.js 22 LTS
 Framework:   Fastify v4 + TypeScript
 Hosting:     Azure Container Apps (Consumption, scale-to-zero)
 Auth:        Azure Communication Services (OTP email)

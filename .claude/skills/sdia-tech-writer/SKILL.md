@@ -172,30 +172,42 @@ The README must always be accurate. Before updating, verify against the codebase
 ```markdown
 ## Quick Start (Local Development)
 
-> Requires: Docker Desktop, Node.js 20, Python 3.11, Azure CLI
+> Requires: Docker Desktop with WSL2 integration, Node.js 22, Python 3.11, uv, Docker Compose, and Azure CLI.
 
-1. Clone the repository
-2. Copy `.env.example` → `.env` and fill required values
-3. Start local services: `docker-compose up -d`
+1. Clone the repository.
+2. Copy `.env.example` to `.env` and fill required local development values.
+3. Start local support services:
+   ```bash
+   docker compose up -d cosmos-emulator azurite mailhog
+   ```
 4. Install dependencies:
    ```bash
    cd backend && npm install
    cd ../frontend && npm install
-   cd ../orchestrator && pip install -r requirements.txt --break-system-packages
+   cd ../orchestrator && uv sync --all-extras
    ```
-5. Start development servers:
-   ```bash
-   cd backend && npm run dev       # localhost:3000
-   cd ../frontend && npm run dev   # localhost:5173
-   ```
-6. Run tests:
-   ```bash
-   cd backend && npm test
-   cd ../orchestrator && pytest
-   cd ../frontend && npm test
-   ```
+Start local development servers:
+```bash
+make dev
 ```
 
+Or start the full local environment, including the orchestrator:
+```bash
+make dev-full
+```
+
+Validate local health endpoints:
+```bash
+make health
+make health-full
+```
+
+Important rules:
+- Do not reference `requirements.txt` unless it exists in the repository.
+- The orchestrator uses `pyproject.toml`, `uv.lock`, and `uv sync --all-extras`.
+- The default local workflow must prefer `make` targets over manual multi-terminal commands.
+- Any README command must be validated against the current Makefile before publishing.
+```
 ## What the Tech Writer Does NOT Do
 
 - Make architectural decisions (that's the Architect)
