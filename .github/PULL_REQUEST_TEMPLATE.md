@@ -51,7 +51,7 @@ Closes #
 - [ ] Logs contain only `requestId` or `jobId`, never PII (email, nickname, token)
 - [ ] No new environment variables store secrets directly (use Key Vault reference)
 - [ ] `.env.example` updated if new env vars added
-- [ ] No hardcoded URLs, IPs, or local machine paths in committed code
+- [ ] No hardcoded production URLs, real secrets, IPs, or local machine-specific paths in committed code
 
 ---
 
