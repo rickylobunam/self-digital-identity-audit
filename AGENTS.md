@@ -130,7 +130,8 @@ backend/
         └── health.ts
 
 orchestrator/
-├── requirements.txt
+├── pyproject.toml
+├── uv.lock
 ├── Dockerfile
 ├── app/
 │   └── main.py
