@@ -1,22 +1,36 @@
-FROM node:20-alpine
+# syntax=docker/dockerfile:1
+
+# ── Build stage ──────────────────────────────────────────────────────
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
-# Copy package files
+ENV NODE_ENV=development
+
 COPY package*.json ./
+RUN npm ci
 
-# Install dependencies
-RUN npm install
-
-# Copy source code
-COPY src ./src
 COPY tsconfig.json ./
+COPY src ./src
 
-# Build
 RUN npm run build
 
-# Expose port
+
+# ── Runtime stage ────────────────────────────────────────────────────
+FROM node:22-bookworm-slim AS runtime
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+
 EXPOSE 3000
 
-# Start server
+USER node
+
 CMD ["npm", "start"]
