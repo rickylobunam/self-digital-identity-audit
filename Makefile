@@ -117,7 +117,7 @@ test:
 	@echo "$(GREEN)→ Backend$(NC)"
 	@cd $(BACKEND_DIR) && npm run test 2>/dev/null || echo "  Test placeholder: no backend test runner configured yet"
 	@echo "$(GREEN)→ Orchestrator$(NC)"
-	@cd $(ORCHESTRATOR_DIR) && uv run pytest tests/ -v
+	@cd $(ORCHESTRATOR_DIR) && uv sync --all-extras && uv run pytest tests/ -v
 	@echo "$(GREEN)✓ All tests complete$(NC)"
 
 build:
