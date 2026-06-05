@@ -103,19 +103,19 @@ install:
 lint:
 	@echo "$(BLUE)Running linters...$(NC)"
 	@echo "$(GREEN)→ Frontend$(NC)"
-	@cd $(FRONTEND_DIR) && npm run lint
+	@cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then npm ci; fi && npm run lint
 	@echo "$(GREEN)→ Backend$(NC)"
-	@cd $(BACKEND_DIR) && npm run lint
+	@cd $(BACKEND_DIR) && if [ ! -d node_modules ]; then npm ci; fi && npm run lint
 	@echo "$(YELLOW)→ Orchestrator: placeholder (ruff not configured yet)$(NC)"
-	@cd $(ORCHESTRATOR_DIR) && echo "Lint placeholder: no linter configured yet"
+	@cd $(ORCHESTRATOR_DIR) && uv sync --all-extras && echo "Lint placeholder: no linter configured yet"
 	@echo "$(GREEN)✓ Lint checks complete$(NC)"
 
 test:
 	@echo "$(BLUE)Running tests...$(NC)"
 	@echo "$(GREEN)→ Frontend$(NC)"
-	@cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then npm install; fi && npm run test
+	@cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then npm ci; fi && npm run test
 	@echo "$(GREEN)→ Backend$(NC)"
-	@cd $(BACKEND_DIR) && if [ ! -x node_modules/.bin/tsx ]; then npm install; fi && npm run test
+	@cd $(BACKEND_DIR) && if [ ! -x node_modules/.bin/tsx ]; then npm ci; fi && npm run test
 	@echo "$(GREEN)→ Orchestrator$(NC)"
 	@cd $(ORCHESTRATOR_DIR) && uv sync --all-extras && uv run pytest tests/ -v
 	@echo "$(GREEN)✓ All tests complete$(NC)"
@@ -123,11 +123,11 @@ test:
 build:
 	@echo "$(BLUE)Building all components...$(NC)"
 	@echo "$(GREEN)→ Frontend (Vite)$(NC)"
-	@cd $(FRONTEND_DIR) && npm run build
+	@cd $(FRONTEND_DIR) && if [ ! -x node_modules/.bin/tsc ] || [ ! -x node_modules/.bin/vite ]; then npm ci; fi && npm run build
 	@echo "$(GREEN)→ Backend (TypeScript)$(NC)"
-	@cd $(BACKEND_DIR) && npm run build
+	@cd $(BACKEND_DIR) && if [ ! -x node_modules/.bin/tsc ]; then npm ci; fi && npm run build
 	@echo "$(YELLOW)→ Orchestrator: no build step required (Python)$(NC)"
-	@cd $(ORCHESTRATOR_DIR) && uv run python -m compileall app tests
+	@cd $(ORCHESTRATOR_DIR) && uv sync --all-extras && uv run python -m compileall app tests
 	@echo "$(GREEN)✓ All components built$(NC)"
 
 dev:
