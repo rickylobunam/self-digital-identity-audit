@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  id-token: write   # OIDC Federated Credential (sin secrets de larga duración)
+  id-token: write   # OIDC Federated Credential (no long-lived secrets)
   contents: read
 
 env:
