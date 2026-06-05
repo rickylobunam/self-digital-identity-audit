@@ -7,7 +7,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "echo \"Lint placeholder: no ESLint configured yet\"",
-    "test": "echo \"Test placeholder: no test runner configured yet\""
+    "test": "tsx --test tests/**/*.test.ts"
   },
   "keywords": [],
   "author": "",

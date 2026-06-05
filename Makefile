@@ -113,9 +113,9 @@ lint:
 test:
 	@echo "$(BLUE)Running tests...$(NC)"
 	@echo "$(GREEN)→ Frontend$(NC)"
-	@cd $(FRONTEND_DIR) && npm run test 2>/dev/null || echo "  Test placeholder: no frontend test runner configured yet"
+	@cd $(FRONTEND_DIR) && if [ ! -d node_modules ]; then npm install; fi && npm run test
 	@echo "$(GREEN)→ Backend$(NC)"
-	@cd $(BACKEND_DIR) && npm run test 2>/dev/null || echo "  Test placeholder: no backend test runner configured yet"
+	@cd $(BACKEND_DIR) && if [ ! -x node_modules/.bin/tsx ]; then npm install; fi && npm run test
 	@echo "$(GREEN)→ Orchestrator$(NC)"
 	@cd $(ORCHESTRATOR_DIR) && uv sync --all-extras && uv run pytest tests/ -v
 	@echo "$(GREEN)✓ All tests complete$(NC)"

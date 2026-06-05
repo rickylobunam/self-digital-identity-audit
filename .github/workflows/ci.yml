@@ -42,7 +42,7 @@ jobs:
       - name: Lint
         run: |
           cd frontend
-          npm run lint 2>/dev/null || echo "Lint placeholder: no linter configured yet"
+          npm run lint
 
       - name: Type check (tsc)
         run: |
@@ -57,7 +57,7 @@ jobs:
       - name: Test
         run: |
           cd frontend
-          npm run test 2>/dev/null || echo "Test placeholder: no test runner configured yet"
+          npm run test
 
       - name: Upload build artifacts
         if: always()
