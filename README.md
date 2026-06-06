@@ -158,7 +158,7 @@ flowchart TD
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20 LTS
+- Node.js 22 LTS
 - Python 3.11
 - Azure CLI (`az login`)
 - GitHub CLI (`gh auth login`)

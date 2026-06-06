@@ -79,13 +79,21 @@ NODE_TLS_REJECT_UNAUTHORIZED=0  # LOCAL DEVELOPMENT ONLY
 
 ### 3.3 Orchestrator (Python FastAPI)
 
+The orchestrator uses `uv` with `pyproject.toml` and `uv.lock`.
+
 ```bash
 cd orchestrator
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
+uv sync --all-extras
+uv run pytest tests/ -v
+uv run uvicorn app.main:app --reload --host 0.0.0.0  # Dev server at localhost:8000, accessible from backend container
+```
+For local development from the repository root, prefer:
+```bash
+  make dev-full
+```
+The orchestrator is optional in the default local development workflow and is only started by make dev-full or by the Docker Compose orchestrator profile.
+**Orchestrator environment variables (`orchestrator/.env`):**
+```bash
 uvicorn app.main:app --reload  # Dev server at localhost:8000
 pytest                          # All tests
 pytest tests/test_report.py -v  # Specific tests
